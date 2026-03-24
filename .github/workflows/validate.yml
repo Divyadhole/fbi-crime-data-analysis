@@ -1,0 +1,64 @@
+name: FBI Crime Analysis Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pandas numpy matplotlib seaborn openpyxl scipy requests
+
+      - name: Validate data loads
+        run: |
+          python -c "
+          from src.fbi_data import load_national, load_states, load_cities
+          nat = load_national()
+          assert len(nat) == 8, f'Expected 8 years, got {len(nat)}'
+          assert nat['year'].min() == 2015
+          assert nat['year'].max() == 2022
+          print(f'✓ National data: {len(nat)} year records')
+
+          states = load_states()
+          assert len(states) == 30
+          print(f'✓ State data: {len(states)} states')
+
+          cities = load_cities()
+          assert len(cities) == 17
+          print(f'✓ City data: {len(cities)} cities')
+          "
+
+      - name: Run statistical analysis
+        run: python src/stats_analysis.py
+
+      - name: Validate COVID spike is statistically significant
+        run: |
+          python -c "
+          from src.stats_analysis import covid_homicide_test
+          result = covid_homicide_test()
+          assert result['significant'], 'COVID homicide spike should be significant!'
+          assert result['p_value'] < 0.05
+          assert result['cohens_d'] > 0.8, 'Should be large effect size'
+          print(f'✓ COVID spike p={result[\"p_value\"]} d={result[\"cohens_d\"]} — validated')
+          "
+
+      - name: Validate property crime is declining
+        run: |
+          python -c "
+          from src.stats_analysis import property_trend_regression
+          r = property_trend_regression()
+          assert r['slope_per_year'] < 0, 'Property crime slope should be negative'
+          assert r['r_squared'] > 0.9, 'R² should be high for clear trend'
+          print(f'✓ Property crime declining: slope={r[\"slope_per_year\"]}, R²={r[\"r_squared\"]}')
+          "
